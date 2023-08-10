@@ -1,10 +1,28 @@
 import axios from "axios";
 import * as stream from "stream";
-import {client as WebSocketClient} from "websocket";
+import {IStringified, client as WebSocketClient, connection} from "websocket";
 import {randomBytes} from "crypto";
 import {OUTPUT_FORMAT} from "./OUTPUT_FORMAT";
 import * as fs from "fs";
 
+// {
+//     "Name": "Microsoft Server Speech Text to Speech Voice (zh-CN, XiaoxiaoNeural)",
+//     "ShortName": "zh-CN-XiaoxiaoNeural",
+//     "Gender": "Female",
+//     "Locale": "zh-CN",
+//     "SuggestedCodec": "audio-24khz-48kbitrate-mono-mp3",
+//     "FriendlyName": "Microsoft Xiaoxiao Online (Natural) - Chinese (Mainland)",
+//     "Status": "GA",
+//     "VoiceTag": {
+//         "ContentCategories": [
+//             "News",
+//             "Novel"
+//         ],
+//             "VoicePersonalities": [
+//             "Warm"
+//         ]
+//      }
+// }
 export type Voice = {
     Name: string;
     ShortName: string;
@@ -16,7 +34,6 @@ export type Voice = {
 }
 
 export class MsEdgeTTS {
-    static OUTPUT_FORMAT = OUTPUT_FORMAT;
     private static TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
     private static VOICES_URL = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=${MsEdgeTTS.TRUSTED_CLIENT_TOKEN}`;
     private static SYNTH_URL = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${MsEdgeTTS.TRUSTED_CLIENT_TOKEN}`;
@@ -24,12 +41,14 @@ export class MsEdgeTTS {
     private static VOICE_LANG_REGEX = /\w{2}-\w{2}/;
     private readonly _enableLogger;
     private _ws: WebSocketClient;
-    private _connection;
-    private _voice;
-    private _voiceLocale;
-    private _outputFormat;
+    private _connection: connection;
+    private _voice: string;
+    private _voiceLocale: string;
+    private _outputFormat: OUTPUT_FORMAT;
     private _queue = {};
     private _startTime = 0;
+    private _sentenceBoundaryEnabled = true;
+    private _wordBoundaryEnabled = true;
 
     /**
      * Create a new `MsEdgeTTS` instance.
@@ -40,12 +59,12 @@ export class MsEdgeTTS {
         this._enableLogger = enableLogger;
     }
 
-    private async _send(message) {
+    private async _send(message: string | IStringified) {
         if (this._connection.state !== "open") {
             await this._connect();
         }
         this._connection.send(message, () => {
-            if (this._enableLogger) console.log("<- sent message");
+            if (this._enableLogger) console.debug("MsEdgeTTS <- sent message");
         });
     }
 
@@ -61,10 +80,10 @@ export class MsEdgeTTS {
         return new Promise((resolve, reject) => {
             this._ws.on("connect", (connection) => {
                 this._connection = connection;
-                if (this._enableLogger) console.log("Connected in", (Date.now() - this._startTime) / 1000, "seconds");
+                if (this._enableLogger) console.log("MsEdgeTTS <- Connected in", (Date.now() - this._startTime) / 1000, "seconds");
 
                 this._connection.on("close", () => {
-                    if (this._enableLogger) console.log("disconnected");
+                    if (this._enableLogger) console.log("MsEdgeTTS <- disconnected");
                 });
 
                 this._connection.on("message", async (m) => {
@@ -73,23 +92,44 @@ export class MsEdgeTTS {
                         const requestId = /X-RequestId:(.*?)\r\n/gm.exec(data)[1];
                         if (data.includes("Path:turn.start")) {
                             // start of turn, ignore
+                            if (this._enableLogger) console.log(`MsEdgeTTS <- stream ${requestId} start`);
                         } else if (data.includes("Path:turn.end")) {
                             // end of turn, close stream
                             this._queue[requestId].push(null);
+                            if (this._enableLogger)  console.log(`MsEdgeTTS <- stream ${requestId} done`);
                         } else if (data.includes("Path:response")) {
                             // context response, ignore
+                            if (this._enableLogger) console.log(`MsEdgeTTS <- stream Path:response`, data);
+                        } else if (data.includes("Path:audio.metadata")) {
+                            // TODO: Metadata can be used for subtitles generation. if you want to implement this, please submit a PR
+                            // Please remember to set the `_sentenceBoundaryEnabled` and `_wordBoundaryEnabled` option to `true` when creating the `MsEdgeTTS` instance
+                            if (this._enableLogger) console.log("MsEdgeTTS <- received metadata", data);
                         } else {
-                            console.log("UNKNOWN MESSAGE", data);
+                            console.warn("MsEdgeTTS <- UNKNOWN MESSAGE", data);
                         }
                     } else if (m.type === "binary") {
                         const data = m.binaryData;
-                        const requestId = /X-RequestId:(.*?)\r\n/gm.exec(data)[1];
-                        if (data[0] === 0x00 && data[1] === 0x67 && data[2] === 0x58) {
-                            // Last (empty) audio fragment
-                        } else {
-                            const index = data.indexOf(MsEdgeTTS.BINARY_DELIM) + MsEdgeTTS.BINARY_DELIM.length;
+                        // binary format: [0][1] represent 2 bytes big endian header length
+                        // header + audio data
+                        // header format:
+                        //     [0][1]X-RequestId:94f77015dd1e0b10f923e5ef34ce4d3c\r\n
+                        //     Content-Type:audio/webm; codec=opus\r\n
+                        //     X-StreamId:0094B960D6544A2D835C13C3A238C17F\r\n
+                        //     Path:audio\r\n
+                        // audio data:
+                        //     [binary audio data]
 
-                            const audioData = data.slice(index, data.length);
+                        const headerLength = data.readUInt16BE(0);
+                         if (data[0] === 0x00 && data[1] === 0x67 && data[2] === 0x58) {
+                            // Last (empty) audio fragment
+                             if (this._enableLogger) console.info("MsEdgeTTS <- Last (empty) audio fragment.");
+                        } else if(data.length < headerLength +2) {
+                            console.error("MsEdgeTTS <- received binary message, but it is missing the audio data.");
+                        } else {
+                            // @ts-ignore
+                            const requestId = /X-RequestId:(.*?)\r\n/gm.exec(data)[1];
+                            const index = headerLength + 2;
+                            const audioData = data.slice(index);
                             this._queue[requestId].push(audioData);
                         }
                     }
@@ -101,8 +141,8 @@ export class MsEdgeTTS {
                             "synthesis": {
                                 "audio": {
                                     "metadataoptions": {
-                                        "sentenceBoundaryEnabled": "false",
-                                        "wordBoundaryEnabled": "false"
+                                        "sentenceBoundaryEnabled": "${this._sentenceBoundaryEnabled}",
+                                        "wordBoundaryEnabled": "${this._wordBoundaryEnabled}",
                                     },
                                     "outputFormat": "${this._outputFormat}" 
                                 }
@@ -113,6 +153,7 @@ export class MsEdgeTTS {
             });
 
             this._ws.on("connectFailed", function (error) {
+                console.warn("MsEdgeTTS_ws.connectFailed");
                 reject("Connect Error: " + error);
             });
 
