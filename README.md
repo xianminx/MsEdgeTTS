@@ -57,3 +57,9 @@ import {MsEdgeTTS, OUTPUT_FORMAT} from "msedge-tts";
 This library only supports promises.
 
 [API Documentation](https://migushthe2nd.github.io/MsEdgeTTS)
+
+
+## Publish 
+See [Host and Publish NPM package on GitHub](https://windix.medium.com/host-and-publish-npm-package-on-github-bb419a2acfd3)
+
+Just push to the `main` branch
