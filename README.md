@@ -58,8 +58,34 @@ This library only supports promises.
 
 [API Documentation](https://migushthe2nd.github.io/MsEdgeTTS)
 
+## Publish
 
-## Publish 
 See [Host and Publish NPM package on GitHub](https://windix.medium.com/host-and-publish-npm-package-on-github-bb419a2acfd3)
+
+### Use
+
+To use it, add a `.npmrc` at the root of your project with following content:
+
+```.npmrc
+@xianminx:registry=https://npm.pkg.github.com
+```
+
+Then, install the dep as: 
+
+```sh
+yarn add @xianminx/msedge-tts
+```
+
+### Local publish
+
+Just run:
+
+```sh
+yarn publish
+```
+
+This will publish npm as `@xianminx/msedge-tts` to Github npm repository.
+
+### Github Action CI publish
 
 Just push to the `main` branch
