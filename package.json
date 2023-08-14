@@ -1,6 +1,6 @@
 {
     "name": "msedge-tts",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "An Azure Speech Service module that uses the Microsoft Edge Read Aloud API.",
     "author": "Migushthe2nd <Migushthe2nd@users.noreply.github.com>",
     "license": "GPL-3.0-or-later",
@@ -12,8 +12,7 @@
         "start": "yarn run build",
         "test": "yarn build && jest --verbose",
         "build": "tsc",
-        "prepublishOnly": "yarn run build",
-        "publish": "yarn publish --access=public"
+        "prepublishOnly": "yarn run build"
     },
     "devDependencies": {
         "@types/jest": "^29.5.3",
