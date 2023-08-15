@@ -4,7 +4,7 @@
     "description": "An Azure Speech Service module that uses the Microsoft Edge Read Aloud API.",
     "author": "Migushthe2nd <Migushthe2nd@users.noreply.github.com>",
     "license": "GPL-3.0-or-later",
-    "repository": "https://github.com/Migushthe2nd/MsEdgeTTS.git",
+    "repository": "https://github.com/xianminx/MsEdgeTTS",
     "private": false,
     "module": "./dist/index",
     "main": "./dist/index",
