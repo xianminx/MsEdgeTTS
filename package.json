@@ -1,6 +1,6 @@
 {
     "name": "@xianminx/msedge-tts",
-    "version": "1.4.7",
+    "version": "1.4.8",
     "description": "An Azure Speech Service module that uses the Microsoft Edge Read Aloud API.",
     "author": "Migushthe2nd <Migushthe2nd@users.noreply.github.com>",
     "license": "GPL-3.0-or-later",
